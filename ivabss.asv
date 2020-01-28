@@ -1,0 +1,90 @@
+function [y, Wmdp] = ivabss(x, nfft, maxiter, tol, eta, nsou)
+
+%  Natural Gradient algorithm for Frecuency Domain Blind source separation
+%        based on Independent Vector Analysis
+%
+%    [y, W] = ivabss(x, nfft, maxiter, tol, eta, nsou)
+%     y : separated signals (nsou x N)
+%     W : unmixing matrices (nsou x nmic x nfft/2+1)
+%     x : observation signals (nmic x N),
+%           where nsou is # of sources, nmic is # of mics, and N is # of time frames
+%     nfft : # of fft points (default =1024)
+%     eta : learning rate (default =0.1)
+%     maxiter : # of iterations (default =1000)
+%     tol : When the difference of objective is less than tol,
+%               the algorithm terminates (default =1e-6)
+%     nsou : # of sources (default =nmic)
+%
+%
+%                                               by Taesu Kim
+%                                     Recently revised at Jan. 25, 2005
+
+nmic = size(x,2);
+if ~exist('nfft','var')|isempty(nfft), nfft = 1024; end
+if ~exist('eta','var')|isempty(eta), eta = 0.1; end
+if ~exist('maxiter','var')|isempty(maxiter), maxiter = 1000; end
+if ~exist('tol','var')|isempty(tol), tol=1e-6; end
+if ~exist('nsou','var')|isempty(nsou), nsou = nmic; end
+
+nol = fix(3*nfft/4);
+nshift = nfft - nol;
+X = permute(STFT(x, nfft, nshift),[3 2 1]);
+N = size(X,2);
+nfreq = size(X,3);
+epsi = 1e-6;
+pObj = Inf;
+
+% Meomory allocations
+Wp = zeros(nsou,nsou,nfreq);
+dWp = zeros(size(Wp));
+Xp = zeros(nsou,N,nfreq);
+Y = zeros(nsou,N,nfreq);
+
+% Execute PCA and initialize
+for k=1:nfreq
+    Xp(:,:,k) = X(:,:,k);
+    Wp(:,:,k) = eye(nsou);
+end
+
+% Start iterative learning algorithm
+for iter=1:maxiter
+
+    dlw = 0;
+    for k=1:nfreq
+        Y(:,:,k) = Wp(:,:,k)*Xp(:,:,k);
+    end
+    
+    Ssq = sum(abs(Y).^2,3).^.5;
+    Ssq1 = (Ssq+epsi).^-1;
+
+    for k=1:nfreq
+        % Calculate multivariate score function and gradients
+        Phi = Ssq1.*Y(:,:,k);
+        dWp(:,:,k) = (eye(nsou) - Phi*Y(:,:,k)'/N)*Wp(:,:,k);
+        dlw = dlw + log(abs(det(Wp(:,:,k)))+epsi);
+
+    end
+    
+    % Update unmixing matrices
+    Wp = Wp + eta*dWp;
+
+    Obj = (sum(sum(Ssq))/N-dlw)/(nsou*nfreq);
+    dObj = pObj-Obj;
+    pObj = Obj;
+    
+    if mod(iter,10) == 0
+        fprintf('%d iterations: Objective=%e, dObj=%e\n',iter,Obj,dObj);
+    end
+    
+    if abs(dObj)/abs(Obj) < tol, break; end
+    
+end
+
+
+%Calculate outputs
+for k=1:nfreq
+    Wmdp(:,:,k) = diag(diag(inv(W(:,:,k))))*Wp(:,:,k);
+    Y(:,:,k) = Wmdp(:,:,k)*X(:,:,k);
+end
+
+y = ISTFT(permute(Y,[3 2 1]),nfft,nshift,size(x,1));
