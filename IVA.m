@@ -7,7 +7,6 @@ X = permute(STFT(x, nfft, nshift),[3 2 1]);
 epsi = 1e-6;
 
 W = zeros(M,M,K);
-Wmdp = zeros(M,M,K);
 dW = zeros(size(W));
 Y = zeros(M,N,K);
 for k=1:K
@@ -22,10 +21,8 @@ for iter=1:maxiter
         Y(:,:,k) = W(:,:,k)*X(:,:,k);
     end
     r = sqrt(sum(abs(Y).^2,3))+epsi;
-    dlw = 0;
     for k=1:K
         dW(:,:,k) = (eye(M) - (Y(:,:,k)./r)*Y(:,:,k)'/N)*W(:,:,k);
-        dlw = dlw + log(abs(det(W(:,:,k)))+epsi);
     end
     % Update unmixing matrices
     W = W + step_size*dW;
@@ -33,7 +30,7 @@ end
 
 %% Calculate outputs
 for k=1:K
-    Wmdp(:,:,k) = diag(diag(inv(W(:,:,k))))*W(:,:,k);
-    Y(:,:,k) = Wmdp(:,:,k)*X(:,:,k);
+    W(:,:,k) = diag(diag(inv(W(:,:,k))))*W(:,:,k);
+    Y(:,:,k) = W(:,:,k)*X(:,:,k);
 end
 y = ISTFT(permute(Y,[3 2 1]),nfft,nshift,size(x,1));
